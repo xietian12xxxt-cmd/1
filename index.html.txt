@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Garden - Voice Diary</title>
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 引入 Google Fonts (Playfair Display 模拟原站字体) -->
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #e0e0e0;
+            --accent-color: #d4af37; /* 金色点缀 */
+            --bg-deep: #050a08;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-deep);
+            font-family: 'Playfair Display', serif;
+            color: var(--primary-color);
+        }
+
+        /* 3D 容器 */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 2s ease;
+        }
+
+        /* UI 层 */
+        #ui-layer {
+            position: absolute;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* 让鼠标穿透到 3D 层 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 标题区域 */
+        header {
+            position: absolute;
+            top: 40px;
+            text-align: center;
+            letter-spacing: 2px;
+            opacity: 0;
+            animation: fadeIn 3s ease 1s forwards;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 400;
+            margin: 0;
+            text-transform: uppercase;
+        }
+
+        p.subtitle {
+            font-family: 'Lato', sans-serif;
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-top: 10px;
+        }
+
+        /* 交互中心 */
+        .interaction-zone {
+            pointer-events: auto;
+            text-align: center;
+            position: relative;
+        }
+
+        /* 录音按钮 - 模拟原站的有机圆形交互 */
+        #mic-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.2);
+            color: white;
+            cursor: pointer;
+            transition: all 0.5s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            position: relative;
+        }
+
+        #mic-btn:hover {
+            border-color: var(--accent-color);
+            background: rgba(212, 175, 55, 0.1);
+            transform: scale(1.05);
+        }
+
+        #mic-btn svg {
+            width: 30px;
+            height: 30px;
+            fill: white;
+            transition: fill 0.3s;
+        }
+
+        #mic-btn.listening {
+            border-color: var(--accent-color);
+            animation: pulse 2s infinite;
+        }
+
+        #mic-btn.listening svg {
+            fill: var(--accent-color);
+        }
+
+        /* 状态文字 */
+        #status-text {
+            margin-top: 20px;
+            font-family: 'Lato', sans-serif;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            height: 20px;
+            opacity: 0.8;
+        }
+
+        /* 生成的日记卡片模态框 */
+        #diary-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 10, 8, 0.9);
+            z-index: 20;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        #diary-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .card-wrapper {
+            text-align: center;
+            transform: translateY(20px);
+            transition: transform 1s ease;
+        }
+
+        #diary-modal.active .card-wrapper {
+            transform: translateY(0);
+        }
+
+        #result-img {
+            max-width: 90%;
+            max-height: 70vh;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .btn-group {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .action-btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            padding: 10px 30px;
+            font-family: 'Lato', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.8rem;
+        }
+
+        .action-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        /* 动画定义 */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.4); }
+            70% { box-shadow: 0 0 0 20px rgba(212, 175, 55, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 隐藏的 Canvas 用于绘图 */
+        #generator-canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D 渲染层 -->
+    <div id="canvas-container"></div>
+
+    <!-- UI 交互层 -->
+    <div id="ui-layer">
+        <header>
+            <h1>The Garden of Memory</h1>
+            <p class="subtitle">Whisper to the trees, keep the moment.</p>
+        </header>
+
+        <div class="interaction-zone">
+            <button id="mic-btn" title="点击开始记录">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+            </button>
+            <div id="status-text">Click to record your thoughts...</div>
+        </div>
+    </div>
+
+    <!-- 日记展示层 -->
+    <div id="diary-modal">
+        <div class="card-wrapper">
+            <img id="result-img" alt="Generated Diary" />
+            <div class="btn-group">
+                <button class="action-btn" id="download-btn">Save Image</button>
+                <button class="action-btn" id="close-btn">Return to Garden</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="generator-canvas"></canvas>
+
+    <script>
+        // ==========================================
+        // 1. THREE.JS 场景构建 (模拟 Penderecki 风格)
+        // ==========================================
+        const container = document.getElementById('canvas-container');
+        
+        const scene = new THREE.Scene();
+        // 深绿色雾气，营造神秘感
+        scene.fog = new THREE.FogExp2(0x05100a, 0.002);
+        scene.background = new THREE.Color(0x05100a);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 50;
+        camera.position.y = 10;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        // 粒子系统 - 模拟漂浮的记忆/萤火虫
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesCount = 2000;
+        const posArray = new Float32Array(particlesCount * 3);
+
+        for(let i = 0; i < particlesCount * 3; i++) {
+            // 随机分布在空间中
+            posArray[i] = (Math.random() - 0.5) * 200; 
+        }
+
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+
+        // 材质：微小的发光点
+        const material = new THREE.PointsMaterial({
+            size: 0.3,
+            color: 0xd4af37, // 金色
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particlesMesh = new THREE.Points(particlesGeometry, material);
+        scene.add(particlesMesh);
+
+        // 添加一些抽象的“树干” (简单的圆柱体)，带发光材质
+        const treeGroup = new THREE.Group();
+        const treeGeo = new THREE.CylinderGeometry(0.5, 2, 80, 8);
+        const treeMat = new THREE.MeshBasicMaterial({ 
+            color: 0x1a2e22, 
+            transparent: true, 
+            opacity: 0.3,
+            wireframe: true 
+        });
+
+        for (let i = 0; i < 15; i++) {
+            const tree = new THREE.Mesh(treeGeo, treeMat);
+            tree.position.x = (Math.random() - 0.5) * 150;
+            tree.position.z = (Math.random() - 0.5) * 150 - 20;
+            tree.position.y = 0;
+            treeGroup.add(tree);
+        }
+        scene.add(treeGroup);
+
+        // 动画循环
+        let mouseX = 0;
+        let mouseY = 0;
+
+        document.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX - window.innerWidth / 2) * 0.05;
+            mouseY = (event.clientY - window.innerHeight / 2) * 0.05;
+        });
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            const elapsedTime = clock.getElapsedTime();
+
+            // 粒子缓慢流动
+            particlesMesh.rotation.y = elapsedTime * 0.05;
+            treeGroup.rotation.y = elapsedTime * 0.02;
+
+            // 摄像机跟随鼠标微动，增加沉浸感
+            camera.position.x += (mouseX - camera.position.x) * 0.05;
+            camera.position.y += (-mouseY + 10 - camera.position.y) * 0.05;
+            camera.lookAt(scene.position);
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        // 页面淡入
+        setTimeout(() => {
+            container.style.opacity = 1;
+        }, 500);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+
+        // ==========================================
+        // 2. 语音识别逻辑 (Web Speech API)
+        // ==========================================
+        const micBtn = document.getElementById('mic-btn');
+        const statusText = document.getElementById('status-text');
+        let recognition;
+        let isRecording = false;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'zh-CN'; // 设置为中文，也可改为 'en-US'
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = function() {
+                isRecording = true;
+                micBtn.classList.add('listening');
+                statusText.innerText = "Listening to your memory...";
+                // 降低背景音乐音量（如果有）
+            };
+
+            recognition.onend = function() {
+                isRecording = false;
+                micBtn.classList.remove('listening');
+                statusText.innerText = "Processing...";
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                console.log("Captured:", transcript);
+                statusText.innerText = "Memory captured.";
+                generateDiaryCard(transcript);
+            };
+
+            recognition.onerror = function(event) {
+                console.error(event.error);
+                statusText.innerText = "Error: " + event.error;
+                micBtn.classList.remove('listening');
+                isRecording = false;
+            };
+        } else {
+            statusText.innerText = "Browser doesn't support Speech API.";
+            micBtn.style.display = 'none';
+        }
+
+        micBtn.addEventListener('click', () => {
+            if (!recognition) return;
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        });
+
+
+        // ==========================================
+        // 3. 图像生成逻辑 (Canvas)
+        // ==========================================
+        function generateDiaryCard(text) {
+            const canvas = document.getElementById('generator-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 设置卡片尺寸 (高保真)
+            const width = 800;
+            const height = 1200;
+            canvas.width = width;
+            canvas.height = height;
+
+            // 1. 绘制背景 (深色纹理)
+            ctx.fillStyle = '#0a1410'; // 深绿色背景
+            ctx.fillRect(0, 0, width, height);
+
+            // 添加噪点纹理效果
+            for (let i = 0; i < 50000; i++) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.05})`;
+                ctx.fillRect(Math.random() * width, Math.random() * height, 2, 2);
+            }
+
+            // 2. 绘制装饰边框
+            ctx.strokeStyle = '#d4af37'; // 金色
+            ctx.lineWidth = 2;
+            ctx.strokeRect(40, 40, width - 80, height - 80);
+
+            // 3. 绘制日期
+            const date = new Date();
+            const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+            ctx.fillStyle = '#d4af37';
+            ctx.font = 'italic 24px "Playfair Display", serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(dateStr + " | " + timeStr, width / 2, 100);
+
+            // 4. 绘制中心图形 (模拟花园中的树或圆)
+            ctx.save();
+            ctx.translate(width/2, height/2 - 100);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 150, 0, Math.PI * 2);
+            ctx.stroke();
+            // 简单的粒子圈装饰
+            for(let i=0; i<360; i+=10) {
+                const rad = i * Math.PI / 180;
+                const x = Math.cos(rad) * 150;
+                const y = Math.sin(rad) * 150;
+                ctx.fillStyle = 'rgba(212, 175, 55, 0.6)';
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.restore();
+
+            // 5. 绘制用户语音文本 (自动换行)
+            ctx.fillStyle = '#e0e0e0';
+            ctx.font = '32px "Playfair Display", serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // 文本换行处理函数
+            function wrapText(context, text, x, y, maxWidth, lineHeight) {
+                const words = text.split(''); // 中文按字分
+                let line = '';
+                let currentY = y;
+
+                for (let n = 0; n < words.length; n++) {
+                    const testLine = line + words[n];
+                    const metrics = context.measureText(testLine);
+                    const testWidth = metrics.width;
+                    if (testWidth > maxWidth && n > 0) {
+                        context.fillText(line, x, currentY);
+                        line = words[n];
+                        currentY += lineHeight;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                context.fillText(line, x, currentY);
+            }
+
+            // 在圆圈下方绘制文字
+            wrapText(ctx, text, width / 2, height / 2 + 100, width - 160, 50);
+
+            // 6. 底部 Logo / 签名
+            ctx.font = 'italic 20px "Lato", sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.fillText("Generated in The Garden", width / 2, height - 60);
+
+            // 7. 输出图片
+            const dataURL = canvas.toDataURL('image/png');
+            showResult(dataURL);
+        }
+
+        // ==========================================
+        // 4. UI 交互流
+        // ==========================================
+        const modal = document.getElementById('diary-modal');
+        const resultImg = document.getElementById('result-img');
+        const closeBtn = document.getElementById('close-btn');
+        const downloadBtn = document.getElementById('download-btn');
+
+        function showResult(src) {
+            resultImg.src = src;
+            modal.classList.add('active');
+            // 模糊背景场景
+            container.style.filter = 'blur(5px)';
+        }
+
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            container.style.filter = 'none';
+            statusText.innerText = "Click to record again...";
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `Garden_Memory_${Date.now()}.png`;
+            link.href = resultImg.src;
+            link.click();
+        });
+
+    </script>
+</body>
+</html>
